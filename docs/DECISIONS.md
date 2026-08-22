@@ -19,7 +19,28 @@ Trade-off accepted:
 new entry — either "SQLite retained, documented ceiling at N concurrent writes" or
 "Migrated to PostgreSQL following load-test findings" — logged with the actual
 numbers from `docs/LOAD_TESTING.md`, not written in advance. That entry will be
-numbered after whatever has already been logged by then (currently #14).
+numbered after whatever has already been logged by then (currently #16).
+
+---
+
+## #16 — `sqlite3.Row` on every connection from `get_connection()`
+Date/Phase: Phase 1 (Database Layer)
+Decision: `get_connection()` sets `conn.row_factory = sqlite3.Row` before returning
+the connection. `init_db()` goes through that helper rather than calling
+`sqlite3.connect` a second way.
+Reasoning: FLOW.md already says the model layer returns `dict`s to the router.
+`sqlite3.Row` is the stdlib way to get named columns (`row["version"]`) instead of
+tuple indexes, which would be a mess the first time we add/reorder a column. I
+almost left the default tuple factory "until Phase 3 needs it," then realized
+`init_db()` verification (`PRAGMA table_info`) is nicer with named fields too, and
+one connection helper means Phase 3 can't accidentally open a tuple-mode connection
+and break `dict(row)`. No WAL, no `check_same_thread=False` — those would change
+locking behavior that Phase 7 is supposed to measure.
+Alternatives considered: Keep the default tuple row factory and index columns by
+position in `models/task.py`. Workable, worse to read. A custom dict factory —
+unnecessary, `sqlite3.Row` already maps to `dict(row)`.
+Trade-off accepted: Callers must treat rows as `Row`/`dict`, not tuples. That's
+the point.
 
 ---
 

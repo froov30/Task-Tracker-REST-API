@@ -13,18 +13,14 @@ refactor).
 > Update this section every session — it's the single source of truth for "what part
 > of the path am I touching right now."
 
-**Currently modifying:** Nothing — Phase 0 scaffold is complete. Next step per
-IMPLEMENTATION_PLAN.md is **Phase 1: database layer**.
-**Last completed phase:** Phase 0 (project setup).
-**Files touched in the most recent change:** `.gitignore`, `requirements.txt`,
-`app/__init__.py`, `app/models/__init__.py`, `app/schemas/__init__.py`,
-`app/routers/__init__.py`, `tests/.gitkeep`.
-**Note:** This revision of FLOW.md merges the filtering/sorting and optimistic
-concurrency flows directly into the base diagrams below, adds the deployment flow
-(Docker/Azure/CI) that didn't exist in the original plan, and adds a load-testing flow
-(new Phase 7, before Docker/Azure) that determines whether the deployment flow targets
-SQLite or PostgreSQL. Request-flow status markers stay ⬜ until those layers exist
-(Phase 1+); Phase 0 only created packages and tooling.
+**Currently modifying:** Nothing — Phase 1 database layer is complete. Next step
+per IMPLEMENTATION_PLAN.md is **Phase 2: Pydantic schemas**.
+**Last completed phase:** Phase 1 (database layer).
+**Files touched in the most recent change:** `app/database.py`, `docs/FLOW.md`,
+`docs/DECISIONS.md`.
+**Note:** `init_db()` exists and was verified against a real SQLite file. The
+startup diagram below is still ⬜ because `app/main.py` does not call it yet
+(that's Phase 4).
 
 ---
 
@@ -49,7 +45,8 @@ app/database.py :: init_db()
         ▼
   App ready, listening on $PORT
 ```
-Status: ⬜ not yet built (Phase 0–1)
+Status: ⬜ not yet built — `app/database.py` (`get_connection`, `init_db`) exists;
+FastAPI startup hook that calls it is still Phase 4
 Note: identical whether run via `uvicorn` directly or inside Docker/Azure — the
 container just wraps this same startup sequence, it doesn't change it.
 
@@ -269,6 +266,7 @@ guessed at in advance.
 
 | Date | Change | Files affected | Reason |
 |------|--------|-----------------|--------|
+| 2026-08-22 | Phase 1: `get_connection()` + `init_db()` create `tasks` including `version`; startup diagram still ⬜ until `main.py` wires it | `app/database.py` | IMPLEMENTATION_PLAN.md Phase 1 — schema exists before any CRUD |
 | 2026-08-22 | Phase 0 scaffold: layered `app/` packages and `tests/` exist on disk; no request path yet | `.gitignore`, `requirements.txt`, `app/**/__init__.py`, `tests/.gitkeep` | IMPLEMENTATION_PLAN.md Phase 0 — folder structure and deps before any runtime code |
 | — | Initial flow drafted (pre-code) | N/A | Planning stage, mirrors ARCHITECTURE.md + IMPLEMENTATION_PLAN.md |
 | — | Merged filtering/sorting, optimistic concurrency, and deployment flow into base diagrams; removed pagination/background-job flows to Deferred section | FLOW.md only | Depth-upgrade plan reviewed and trimmed; Docker/Azure retrofit folded into the same plan-only pass rather than a later rework |
