@@ -13,14 +13,13 @@ refactor).
 > Update this section every session — it's the single source of truth for "what part
 > of the path am I touching right now."
 
-**Currently modifying:** Nothing — Phase 2 schemas are complete. Next step per
-IMPLEMENTATION_PLAN.md is **Phase 3: data-access layer**.
-**Last completed phase:** Phase 2 (Pydantic schemas).
-**Files touched in the most recent change:** `app/schemas/task.py`, `docs/FLOW.md`,
+**Currently modifying:** Nothing — Phase 3 data-access layer is complete. Next
+step per IMPLEMENTATION_PLAN.md is **Phase 4: routers**.
+**Last completed phase:** Phase 3 (models / CRUD + filter/sort + OCC).
+**Files touched in the most recent change:** `app/models/task.py`, `docs/FLOW.md`,
 `docs/DECISIONS.md`.
-**Note:** Request flows stay ⬜ — schemas exist but nothing HTTP-facing uses them
-yet. Section 7 (validation error path) is still FastAPI-only; it lights up in
-Phase 4.
+**Note:** Model functions exist and were verified off-HTTP. Request-flow
+diagrams stay ⬜ until `routers/tasks.py` and `main.py` wire them (Phase 4).
 
 ---
 
@@ -78,7 +77,8 @@ app/routers/tasks.py :: create_task (continued)
   ▼
 Client receives 201 + JSON body (includes "version": 1)
 ```
-Status: ⬜ not yet built (Phase 3–4)
+Status: ⬜ not yet built — `models/task.py::create_task` exists (Phase 3);
+router + 201 response is Phase 4
 
 ---
 
@@ -106,7 +106,8 @@ app/routers/tasks.py :: list_tasks (continued)
   ▼
 Client receives 200 + JSON array, correctly filtered and ordered
 ```
-Status: ⬜ not yet built (Phase 3–4)
+Status: ⬜ not yet built — `get_all_tasks` + `SORT_COLUMNS` exist (Phase 3);
+query params + `list[TaskOut]` is Phase 4
 
 ---
 
@@ -119,7 +120,7 @@ Client -> routers/tasks.py :: get_task(task_id)
              <- None -> raise HTTPException(404)
              <- dict -> wrap as TaskOut (includes version) -> 200
 ```
-Status: ⬜ not yet built (Phase 3–4)
+Status: ⬜ not yet built — `get_task_by_id` exists (Phase 3); 404 HTTP is Phase 4
 
 ---
 
@@ -139,7 +140,8 @@ Client -> routers/tasks.py :: update_task(task_id, payload: TaskUpdate)
              <- VERSION_CONFLICT  -> raise HTTPException(409, "version mismatch, re-fetch and retry")
              <- dict              -> wrap as TaskOut (incremented version) -> 200
 ```
-Status: ⬜ not yet built (Phase 3–4)
+Status: ⬜ not yet built — `update_task` returns `NOT_FOUND` /
+`VERSION_CONFLICT` / dict (Phase 3); the HTTP 404/409/200 branch is Phase 4
 Note: this is the flow most likely to come up verbally in a technical interview — the
 three-way branch (404 / 409 / 200) is intentionally written out explicitly in
 `routers/tasks.py` rather than collapsed, so it's easy to point to and explain.
@@ -157,7 +159,8 @@ Client -> routers/tasks.py :: delete_task(task_id)
                   -> DELETE FROM tasks WHERE id = ?
              <- 204 No Content
 ```
-Status: ⬜ not yet built (Phase 3–4)
+Status: ⬜ not yet built — `delete_task` exists (Phase 3); existence check +
+204 is Phase 4
 Unchanged from the base plan — delete was never touched by the depth-upgrade features.
 
 ---
@@ -268,6 +271,7 @@ guessed at in advance.
 
 | Date | Change | Files affected | Reason |
 |------|--------|-----------------|--------|
+| 2026-08-24 | Phase 3: CRUD + parameterized filters + `SORT_COLUMNS`/`SORT_ORDERS` + version-checked UPDATE sentinels; HTTP still unwired | `app/models/task.py` | IMPLEMENTATION_PLAN.md Phase 3 — SQL lives only in the model layer |
 | 2026-08-22 | Phase 2: Pydantic `TaskCreate`/`TaskUpdate`/`TaskOut` + `TaskStatus`/`SortBy`/`SortOrder`; validation path still ⬜ until routers exist | `app/schemas/task.py` | IMPLEMENTATION_PLAN.md Phase 2 — shapes exist before SQL or HTTP |
 | 2026-08-22 | Phase 1: `get_connection()` + `init_db()` create `tasks` including `version`; startup diagram still ⬜ until `main.py` wires it | `app/database.py` | IMPLEMENTATION_PLAN.md Phase 1 — schema exists before any CRUD |
 | 2026-08-22 | Phase 0 scaffold: layered `app/` packages and `tests/` exist on disk; no request path yet | `.gitignore`, `requirements.txt`, `app/**/__init__.py`, `tests/.gitkeep` | IMPLEMENTATION_PLAN.md Phase 0 — folder structure and deps before any runtime code |

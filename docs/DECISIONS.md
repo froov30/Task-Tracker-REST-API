@@ -19,7 +19,44 @@ Trade-off accepted:
 new entry — either "SQLite retained, documented ceiling at N concurrent writes" or
 "Migrated to PostgreSQL following load-test findings" — logged with the actual
 numbers from `docs/LOAD_TESTING.md`, not written in advance. That entry will be
-numbered after whatever has already been logged by then (currently #17).
+numbered after whatever has already been logged by then (currently #18).
+
+---
+
+## #18 — `SORT_ORDERS` + frozen UPDATE columns; inclusive due-date range
+Date/Phase: Phase 3 (Data-Access Layer)
+Decision: `ORDER BY` uses two lookups — `SORT_COLUMNS` for the column (DECISIONS.md
+#8) and `SORT_ORDERS` mapping `asc`/`desc` to `ASC`/`DESC`. Invalid keys raise
+`ValueError`; the user string is never concatenated. `UPDATE` assignments for
+task fields only come from the frozen tuple `_UPDATABLE_COLUMNS` (`title`,
+`description`, `status`, `due_date`); extra keys in `data` (including
+`version`) are ignored. `due_after` is `due_date >= ?`, `due_before` is
+`due_date <= ?` (inclusive). Tasks with `due_date` NULL do not match either
+date filter. Successful updates always bump `version` and `updated_at` even
+when `data` has no field changes. Sentinels are the strings `NOT_FOUND` /
+`VERSION_CONFLICT`, not HTTP exceptions.
+Reasoning: #8 already bans interpolating `sort_by`. I still needed a direction
+token in the SQL, and `f"... {sort_order}"` would have been the same class of
+mistake for a two-value string. Mapping through `SORT_ORDERS` keeps the safety
+property inside `get_all_tasks`, which is what #8 asked for. I verified a
+hostile `sort_by='id; DROP TABLE tasks'` raises `ValueError` and never reaches
+`execute`. For UPDATE I almost looped `for key in data` — that would have
+tried to SET `version` (passed separately) or any junk key if a caller dumped
+the whole payload. The frozen tuple is the SET equivalent of `SORT_COLUMNS`.
+Inclusive range: TRD doesn't say; exclusive `due_before` would drop tasks due
+*on* that day, which is the more surprising behavior. NULL due dates failing
+the filter is SQLite's normal NULL comparison, not a special CASE — I left it
+rather than invent `OR due_date IS NULL`. Version-only PUT still increments:
+the row was "written" (OCC succeeded); wiping title/description was the
+failure mode Phase 5 wants us not to have, and `{}` plus version does not
+touch those columns.
+Alternatives considered: Trust FastAPI's Literal and interpolate `sort_order`
+directly — rejected as the same fragility #8 called out. Exclusive date
+bounds. Mapping sentinels to exceptions inside the model — would import HTTP
+concepts, which ARCHITECTURE.md forbids.
+Trade-off accepted: Calling `get_all_tasks` with a bad sort value raises
+`ValueError` instead of a 422. That's correct: 422 belongs in the router once
+it exists. Direct model callers are supposed to pass already-valid names.
 
 ---
 
