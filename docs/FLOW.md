@@ -13,14 +13,14 @@ refactor).
 > Update this section every session — it's the single source of truth for "what part
 > of the path am I touching right now."
 
-**Currently modifying:** Nothing — Phase 1 database layer is complete. Next step
-per IMPLEMENTATION_PLAN.md is **Phase 2: Pydantic schemas**.
-**Last completed phase:** Phase 1 (database layer).
-**Files touched in the most recent change:** `app/database.py`, `docs/FLOW.md`,
+**Currently modifying:** Nothing — Phase 2 schemas are complete. Next step per
+IMPLEMENTATION_PLAN.md is **Phase 3: data-access layer**.
+**Last completed phase:** Phase 2 (Pydantic schemas).
+**Files touched in the most recent change:** `app/schemas/task.py`, `docs/FLOW.md`,
 `docs/DECISIONS.md`.
-**Note:** `init_db()` exists and was verified against a real SQLite file. The
-startup diagram below is still ⬜ because `app/main.py` does not call it yet
-(that's Phase 4).
+**Note:** Request flows stay ⬜ — schemas exist but nothing HTTP-facing uses them
+yet. Section 7 (validation error path) is still FastAPI-only; it lights up in
+Phase 4.
 
 ---
 
@@ -176,6 +176,8 @@ Automatic 422 response: { "detail": [ { "loc": [...], "msg": "...", "type": "...
 This path never touches `models/task.py` or `database.py` — validation failures
 (including invalid `sort_by`, invalid `status`, missing `version`) are fully contained
 in the schema layer, by design (see ARCHITECTURE.md §1, DECISIONS.md #5, #8).
+Status: ⬜ not yet built — `app/schemas/task.py` exists (Phase 2); FastAPI only
+runs this path once routers exist (Phase 4)
 
 ---
 
@@ -266,6 +268,7 @@ guessed at in advance.
 
 | Date | Change | Files affected | Reason |
 |------|--------|-----------------|--------|
+| 2026-08-22 | Phase 2: Pydantic `TaskCreate`/`TaskUpdate`/`TaskOut` + `TaskStatus`/`SortBy`/`SortOrder`; validation path still ⬜ until routers exist | `app/schemas/task.py` | IMPLEMENTATION_PLAN.md Phase 2 — shapes exist before SQL or HTTP |
 | 2026-08-22 | Phase 1: `get_connection()` + `init_db()` create `tasks` including `version`; startup diagram still ⬜ until `main.py` wires it | `app/database.py` | IMPLEMENTATION_PLAN.md Phase 1 — schema exists before any CRUD |
 | 2026-08-22 | Phase 0 scaffold: layered `app/` packages and `tests/` exist on disk; no request path yet | `.gitignore`, `requirements.txt`, `app/**/__init__.py`, `tests/.gitkeep` | IMPLEMENTATION_PLAN.md Phase 0 — folder structure and deps before any runtime code |
 | — | Initial flow drafted (pre-code) | N/A | Planning stage, mirrors ARCHITECTURE.md + IMPLEMENTATION_PLAN.md |

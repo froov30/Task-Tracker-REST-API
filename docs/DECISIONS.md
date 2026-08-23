@@ -19,7 +19,32 @@ Trade-off accepted:
 new entry — either "SQLite retained, documented ceiling at N concurrent writes" or
 "Migrated to PostgreSQL following load-test findings" — logged with the actual
 numbers from `docs/LOAD_TESTING.md`, not written in advance. That entry will be
-numbered after whatever has already been logged by then (currently #16).
+numbered after whatever has already been logged by then (currently #17).
+
+---
+
+## #17 — Title `min_length=1` with whitespace stripped; `version >= 1`
+Date/Phase: Phase 2 (Schemas)
+Decision: `title` on create (and on update when present) is
+`StringConstraints(strip_whitespace=True, min_length=1)`. `TaskUpdate.version` is
+required `int` with `Field(ge=1)`. Sort types are `Literal`s with no defaults on
+the schema objects themselves — defaults stay on the FastAPI `Query()` params in
+Phase 4.
+Reasoning: IMPLEMENTATION_PLAN.md says "Add field validation (title min length,
+etc.)" but TRD never names the number. Without `min_length=1`, `title: ""` would
+be a valid `str` and we'd persist empty tasks; the 422-on-missing-title test in
+Phase 6 wouldn't catch that. I tried a plain `min_length=1` first in a scratch
+check — `"   "` has length 3, so it would sneak through. Strip-then-min-length
+is the actual rule I wanted. `ge=1` on version is because stored versions start
+at 1 (DECISIONS.md #9); `version: 0` can't be a last-read value, so fail at
+validation instead of looking like a 409. I did not put `sort_by`/`sort_order`
+defaults on the Literal aliases — those aren't fields on a body model, and
+duplicating defaults here plus on `Query()` is how they drift.
+Alternatives considered: Leave title as unconstrained `str` (what TRD's field
+list literally shows). Rejected — empty titles are junk data. A max-length cap
+— not in the spec, so I didn't invent one.
+Trade-off accepted: Whitespace-only titles 422, which is slightly stricter than
+"missing title" in the TRD examples. Fine.
 
 ---
 
