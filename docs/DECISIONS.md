@@ -23,6 +23,42 @@ numbered after whatever has already been logged by then (currently #18).
 
 ---
 
+## #19 — SQLite retained; documented ceiling at ~50 concurrent writers
+Date/Phase: Phase 7 (Load Testing & Scalability Baseline)
+Decision: Retain SQLite as the database engine for this version. No migration to
+PostgreSQL. The load-test results are the honest finding that drives this decision —
+see `docs/LOAD_TESTING.md` for the full data.
+Key numbers:
+  - 10 concurrent users: 0% error rate, 28.8 req/s, p50 = 11 ms (all endpoints clean)
+  - 50 concurrent users: 1.50% error rate (writes only), 56.4 req/s peak, p50 = 140 ms
+    — first `database is locked` 500s appear on POST/PUT; reads remain error-free
+  - 200 concurrent users: 9.03% error rate, throughput *drops* to 33.2 req/s (queueing),
+    p50 = 5,000 ms — severe degradation, reads also affected (5 connection-reset errors)
+  - Concurrent-write contention scenario (50 users, same task): 93% 409 responses
+    (correct OCC behaviour), 5 genuine 500s from SQLite write-lock timeout
+Reasoning: The PRD's target workload is a single developer or small team managing
+personal/project tasks — not a multi-tenant SaaS with hundreds of concurrent writers.
+The safe operational ceiling (~30 concurrent users, 0 errors, p50 < 20 ms) covers that
+actual use case comfortably. SQLite's ceiling is now documented with real numbers rather
+than assumed. The migration path (PostgreSQL + docker-compose.yml + Azure Database for
+PostgreSQL Flexible Server) is well-understood; if a future version targets higher
+concurrency, that's the next step. Doing it now would be engineering for a use case
+that isn't the project's actual requirement.
+Alternatives considered: Migrate to PostgreSQL (Azure Database for PostgreSQL Flexible
+Server) before Phase 8. This was a genuine option — the IMPLEMENTATION_PLAN.md and
+TRD.md both describe the migration path. Rejected because: (a) the numbers show SQLite
+handles the actual target load, (b) the migration would add significant Phase 7–8 scope
+(new docker-compose.yml, new CI service container, new connection string, asyncpg or
+psycopg driver swap) without addressing a real gap, (c) the value of SQLite's simplicity
+(zero-infra, boots on a fresh container with no manual DB setup) is preserved where it's
+legitimately sufficient.
+Trade-off accepted: SQLite is ephemeral per container instance unless a persistent volume
+is mounted. Documented in README (Phase 8). If the app is redeployed, the database
+starts empty. For personal task tracking this is acceptable; for production multi-user
+use it is not, and that's the correct answer to give in an interview rather than
+papering over it.
+
+
 ## #18 — `SORT_ORDERS` + frozen UPDATE columns; inclusive due-date range
 Date/Phase: Phase 3 (Data-Access Layer)
 Decision: `ORDER BY` uses two lookups — `SORT_COLUMNS` for the column (DECISIONS.md

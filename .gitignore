@@ -4,3 +4,5 @@ tasks.db
 .env
 
 phase3_verify.db
+
+results/
