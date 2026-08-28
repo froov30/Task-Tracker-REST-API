@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+tasks.db
+.env
+tests/
+results/
+docs/
+.git/
+.gitignore
+.pytest_cache/
+*.db
+*.pyc
+README.md
+locustfile.py
+Task_Tracker_Interview_Defense_Guide.pdf
