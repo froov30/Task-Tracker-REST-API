@@ -16,48 +16,44 @@ A production-ready, lightweight REST API built with **FastAPI**, **Pydantic v2**
 GitHub renders the diagram below natively. It outlines how a client request travels through our strict architectural layers, performs Optimistic Concurrency Control (OCC), and deploys to the cloud:
 
 ```mermaid
-flowchart TD
-    subgraph Client [" Client Layer "]
-        C[HTTP Client / Curl / Swagger UI / Locust]
+graph TD
+    Client[HTTP Client / Curl / Swagger UI / Locust]
+
+    subgraph Application [" FastAPI Application Layer "]
+        Router[routers/tasks.py - Path Operations]
+        Schema[schemas/task.py - Pydantic v2 Validation]
+        Model[models/task.py - Data Access & OCC]
+        Database[(database.py - SQLite tasks.db)]
     end
 
     subgraph Infrastructure [" Cloud & CI/CD Infrastructure "]
-        GA["GitHub Actions CI<br/>(Ruff Lint + 28 Pytest Suite)"]
-        AZ["Azure App Service for Containers<br/>(Central India Region / F1 Tier)"]
-        DK["Docker Hub Image<br/>(da99war/task-tracker-api)"]
+        CI[GitHub Actions CI - Ruff & Pytest]
+        Docker[Docker Hub Container Image]
+        Azure[Azure App Service Host]
     end
 
-    subgraph API [" FastAPI Application Layer "]
-        R["routers/tasks.py<br/>(FastAPI Path Operations)"]
-        S["schemas/task.py<br/>(Pydantic v2 Request/Response Validation)"]
-        M["models/task.py<br/>(Data Access Layer & Query Builder)"]
-        DB[("database.py<br/>tasks.db (SQLite)")]
-    end
+    %% Application Flow
+    Client -->|HTTP Request| Router
+    Router -->|Validate Payload| Schema
+    Schema -->|Validated Object| Router
+    Router -->|Call Data Model| Model
+    Model -->|Parameterized SQL| Database
+    Database -->|Rows / Affected Count| Model
 
-    %% Flow connections
-    C -->|HTTP Request| R
-    R -->|Validate Request| S
-    S -->|Validated Object| R
-    
-    R -->|Call Data Model| M
-    
-    M -->|Parameterized SQL + Whitelisted ORDER BY| DB
-    DB -->|Raw Sqlite Row / Affected Count| M
+    %% OCC Decision Tree
+    Model --> Decision{Affected Rows & State}
+    Decision -->|1 Row Affected| OK[HTTP 200/201 Success - Version + 1]
+    Decision -->|0 Rows - Not Found| E404[HTTP 404 Not Found]
+    Decision -->|0 Rows - Version Mismatch| E409[HTTP 409 Conflict - OCC Triggered]
 
-    %% Concurrency logic
-    M -->|Check Affected Rows| Decision{Row Count & State}
-    Decision -->|1 Row Affected| OK["HTTP 200/201 Success (Version + 1)"]
-    Decision -->|0 Rows (Not Found)| N404["HTTP 404 Not Found"]
-    Decision -->|0 Rows (Version Mismatch)| C409["HTTP 409 Conflict (OCC Triggered)"]
+    OK --> Client
+    E404 --> Client
+    E409 --> Client
 
-    OK --> C
-    N404 --> C
-    C409 --> C
-
-    %% Infra ties
-    GA -.->|Gates Build| DK
-    DK -.->|Deploys to| AZ
-    AZ -.->|Hosts| R
+    %% Infrastructure pipeline
+    CI -->|Automated Test Gate| Docker
+    Docker -->|Pushed & Pulled| Azure
+    Azure -->|Hosts Live Service| Router
 ```
 
 ---
