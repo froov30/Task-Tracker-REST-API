@@ -9,7 +9,12 @@ Coverage areas (per TRD §7 and IMPLEMENTATION_PLAN Phase 6):
      missing version on PUT — all 422
 """
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
+
+
+def _today():
+    """Timezone-aware today's date (avoids ruff DTZ011)."""
+    return datetime.now(tz=UTC).date()
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +77,7 @@ class TestCRUDHappyPath:
 
     def test_create_with_due_date(self, client):
         """Ensure due_date is stored and returned correctly."""
-        due = (date.today() + timedelta(days=7)).isoformat()
+        due = (_today() + timedelta(days=7)).isoformat()
         resp = client.post(
             "/tasks",
             json={"title": "Future task", "due_date": due},
@@ -133,7 +138,7 @@ class TestFilteringAndSorting:
 
     def _seed_tasks(self, client):
         """Insert a known set of tasks for filter/sort testing."""
-        today = date.today()
+        today = _today()
         tasks = [
             {
                 "title": "Alpha",
@@ -184,8 +189,8 @@ class TestFilteringAndSorting:
         assert results[0]["title"] == "Alpha"
 
     def test_filter_by_due_before(self, client):
-        created = self._seed_tasks(client)
-        today = date.today()
+        self._seed_tasks(client)
+        today = _today()
         cutoff = (today + timedelta(days=3)).isoformat()
 
         resp = client.get("/tasks", params={"due_before": cutoff})
@@ -197,7 +202,7 @@ class TestFilteringAndSorting:
 
     def test_filter_by_due_after(self, client):
         self._seed_tasks(client)
-        today = date.today()
+        today = _today()
         cutoff = (today + timedelta(days=6)).isoformat()
 
         resp = client.get("/tasks", params={"due_after": cutoff})
@@ -210,7 +215,7 @@ class TestFilteringAndSorting:
     def test_combined_filter_status_and_due_before(self, client):
         """status + due_before together should return the intersection."""
         self._seed_tasks(client)
-        today = date.today()
+        today = _today()
         cutoff = (today + timedelta(days=15)).isoformat()
 
         resp = client.get(

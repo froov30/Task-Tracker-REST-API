@@ -1,0 +1,4 @@
+[lint]
+# B008: FastAPI uses Query(), Path(), Body() in function default args by design.
+# This is the official documented pattern, not a bug.
+per-file-ignores = { "app/routers/*.py" = ["B008"] }

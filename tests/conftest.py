@@ -5,9 +5,6 @@ Each test gets a fresh, isolated SQLite database (tempfile) so tests
 never interfere with each other or with the production database.
 """
 
-import os
-import tempfile
-
 import pytest
 from fastapi.testclient import TestClient
 
