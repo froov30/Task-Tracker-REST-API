@@ -246,8 +246,9 @@ Empirical load testing was executed using Locust across concurrent write content
 
 ## Live Cloud Deployment (Azure)
 
-- **Live Service URL:** *(To be updated after Phase 10 deployment)*
-- **Swagger Documentation:** `https://<azure-app-name>.azurewebsites.net/docs`
+- **Live Service URL:** [https://task-tracker-api-dhruv.azurewebsites.net](https://task-tracker-api-dhruv.azurewebsites.net)
+- **Interactive Swagger Docs:** [https://task-tracker-api-dhruv.azurewebsites.net/docs](https://task-tracker-api-dhruv.azurewebsites.net/docs)
+- **ReDoc Documentation:** [https://task-tracker-api-dhruv.azurewebsites.net/redoc](https://task-tracker-api-dhruv.azurewebsites.net/redoc)
 
 ---
 

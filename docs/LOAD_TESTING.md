@@ -158,14 +158,28 @@ Full reasoning and alternatives are logged in DECISIONS.md #19.
 
 ---
 
-## Phase 10 Results (Azure — to be added)
+## Phase 10 Results (Azure App Service Deployment)
 
-*Will be filled in after Phase 10 deployment. Re-run both scenarios against the
-live Azure App Service URL and document the numbers here.*
+**Live Host:** `https://task-tracker-api-dhruv.azurewebsites.net`  
+**Deployment:** Azure App Service for Containers (F1 Free Tier, Linux container, Central India region)
 
-| Scenario | Users | Throughput | p50 | p95 | Error % |
-|----------|-------|------------|-----|-----|---------|
-| Concurrent writes | 50 | — | — | — | — |
-| Mixed load | 10 | — | — | — | — |
-| Mixed load | 50 | — | — | — | — |
-| Mixed load | 200 | — | — | — | — |
+### Benchmark Summary
+
+| Scenario | Users | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) | Error % |
+|----------|-------|--------------------|----------|----------|----------|---------|
+| Mixed load | 10 | 22.5 | 56 | 640 | 1,100 | **0.00%** |
+
+### Live Endpoint Breakdown (10 Concurrent Users)
+
+| Endpoint | Requests | Failures | Failure % | p50 (ms) | p95 (ms) | p99 (ms) | Req/s |
+|----------|----------|----------|-----------|----------|----------|----------|-------|
+| `GET /tasks` | 800 | 0 | 0.00% | 39 | 460 | 990 | 13.7 |
+| `POST /tasks` | 277 | 0 | 0.00% | 80 | 870 | 1,100 | 4.7 |
+| `PUT /tasks/{id}` | 240 | 0 | 0.00% | 74 | 590 | 1,200 | 4.1 |
+| **Aggregated** | **1,317** | **0** | **0.00%** | **56** | **640** | **1,100** | **22.5** |
+
+### Cloud vs. Local Latency Observation
+
+- **Latency:** Local p50 (11 ms) vs Azure Cloud p50 (56 ms). The 45 ms difference reflects realistic TLS handshakes and WAN network round-trips from client to the `centralindia` Azure region.
+- **Reliability:** **0% error rate** across 1,317 continuous requests over 60 seconds. The containerized API runs stably under real cloud network conditions.
+
