@@ -1,17 +1,76 @@
 # Task Tracker REST API
 
-A production-ready, lightweight REST API built with FastAPI, Pydantic v2, and SQLite for managing task lifecycles with optimistic concurrency control, filtering, sorting, automated testing, and baseline load-testing results.
+![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688.svg)
+![CI Status](https://img.shields.io/badge/build-passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-28%2F28%20passing-success.svg)
+![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)
+![Azure Deployment](https://img.shields.io/badge/azure-live-0089D6.svg)
+
+A production-ready, lightweight REST API built with **FastAPI**, **Pydantic v2**, and **SQLite** for managing task lifecycles with Optimistic Concurrency Control (OCC), combinable filtering, column-whitelisted sorting, comprehensive test suite, and empirical load-testing baseline.
 
 ---
 
-## Features
+## ⚡ 1-Minute System Architecture & Data Flow
+
+GitHub renders the diagram below natively. It outlines how a client request travels through our strict architectural layers, performs Optimistic Concurrency Control (OCC), and deploys to the cloud:
+
+```mermaid
+flowchart TD
+    subgraph Client [" Client Layer "]
+        C[HTTP Client / Curl / Swagger UI / Locust]
+    end
+
+    subgraph Infrastructure [" Cloud & CI/CD Infrastructure "]
+        GA["GitHub Actions CI<br/>(Ruff Lint + 28 Pytest Suite)"]
+        AZ["Azure App Service for Containers<br/>(Central India Region / F1 Tier)"]
+        DK["Docker Hub Image<br/>(da99war/task-tracker-api)"]
+    end
+
+    subgraph API [" FastAPI Application Layer "]
+        R["routers/tasks.py<br/>(FastAPI Path Operations)"]
+        S["schemas/task.py<br/>(Pydantic v2 Request/Response Validation)"]
+        M["models/task.py<br/>(Data Access Layer & Query Builder)"]
+        DB[("database.py<br/>tasks.db (SQLite)")]
+    end
+
+    %% Flow connections
+    C -->|HTTP Request| R
+    R -->|Validate Request| S
+    S -->|Validated Object| R
+    
+    R -->|Call Data Model| M
+    
+    M -->|Parameterized SQL + Whitelisted ORDER BY| DB
+    DB -->|Raw Sqlite Row / Affected Count| M
+
+    %% Concurrency logic
+    M -->|Check Affected Rows| Decision{Row Count & State}
+    Decision -->|1 Row Affected| OK["HTTP 200/201 Success (Version + 1)"]
+    Decision -->|0 Rows (Not Found)| N404["HTTP 404 Not Found"]
+    Decision -->|0 Rows (Version Mismatch)| C409["HTTP 409 Conflict (OCC Triggered)"]
+
+    OK --> C
+    N404 --> C
+    C409 --> C
+
+    %% Infra ties
+    GA -.->|Gates Build| DK
+    DK -.->|Deploys to| AZ
+    AZ -.->|Hosts| R
+```
+
+---
+
+## Key Highlights
 
 - **Full Task Lifecycle (5 REST Endpoints):** `POST`, `GET` (list), `GET` (single), `PUT` (partial update), `DELETE`.
-- **Optimistic Concurrency Control (OCC):** Prevents lost updates using mandatory versioning (`version: int`). Returns `409 Conflict` on version mismatches.
+- **Optimistic Concurrency Control (OCC):** Prevents lost updates using mandatory versioning (`version: int`). Returns `409 Conflict` on version mismatches under concurrent writes (tested with Locust).
 - **Dynamic Filtering & Sorting:** Filter by `status`, `due_before`, and `due_after`. Sort safely by `created_at`, `due_date`, or `title` using column whitelisting (SQL injection safe).
 - **Validation-First:** Pydantic v2 enforces schema validation for all requests (`422 Unprocessable Entity`).
-- **Comprehensive Automated Tests:** 28 unit and integration tests using `pytest` and `httpx`.
-- **Benchmarked Scalability:** Empirical load-testing baseline via `Locust` with documented concurrency bounds.
+- **Comprehensive Automated Tests:** 28 unit and integration tests using `pytest` and `httpx` with per-test isolated SQLite databases.
+- **Benchmarked Scalability:** Empirical load-testing baseline via `Locust` with documented concurrency bounds (0% errors at 10 users; ~50 writer ceiling).
+- **Production CI/CD & Deployment:** GitHub Actions CI pipeline running Ruff + Pytest, Dockerized with `python:3.11-slim`, and deployed live on Azure App Service.
 
 ---
 
@@ -23,6 +82,7 @@ A production-ready, lightweight REST API built with FastAPI, Pydantic v2, and SQ
 - **Database:** SQLite (`sqlite3` stdlib with parameterized queries)
 - **Testing:** `pytest` + FastAPI `TestClient`
 - **Load Testing:** Locust
+- **CI/CD & Cloud:** GitHub Actions, Docker, Azure App Service
 
 ---
 
