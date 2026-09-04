@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: tasktracker_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+      POSTGRES_DB: taskdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskuser -d taskdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------------
+  # Task Tracker API
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tasktracker_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://taskuser:taskpass@postgres:5432/taskdb
+      PORT: 8000
+    ports:
+      - "8000:8000"
+    # Run Alembic migrations before starting uvicorn
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $${PORT}"
+
+volumes:
+  postgres_data:
