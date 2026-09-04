@@ -1,6 +1,25 @@
-fastapi==0.141.1
-uvicorn[standard]==0.52.4
+# Web framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+
+# Data validation
 pydantic==2.13.4
+pydantic-settings==2.9.1
+
+# Database — async ORM + drivers
+sqlalchemy==2.0.40
+asyncpg==0.30.0
+alembic==1.15.2
+psycopg2-binary==2.9.10   # used by Alembic's synchronous env.py
+
+# Environment
+python-dotenv==1.1.0
+
+# Testing
 pytest==8.3.5
+pytest-asyncio==0.26.0
 httpx==0.28.1
+aiosqlite==0.21.0          # async SQLite driver used in CI / local tests
+
+# Load testing
 locust==2.37.2
