@@ -3,7 +3,7 @@ AuthService — registration, login, and current-user resolution.
 
 Rules for this layer:
   - No SQL — all DB access goes through UserRepository.
-  - Translates auth failures into HTTPExceptions (401 / 400).
+  - Translates auth failures into HTTPExceptions with structured details.
   - Uses app.security for hashing and JWT (no crypto here directly).
 """
 
@@ -12,6 +12,7 @@ from fastapi import status as http_status
 
 from app.models.orm import User
 from app.repositories.user_repository import UserRepository
+from app.schemas.errors import ErrorCode, error_detail
 from app.security import (
     create_access_token,
     decode_access_token,
@@ -19,12 +20,15 @@ from app.security import (
     verify_password,
 )
 
-# Reusable 401 for any credential / token failure
-_CREDENTIALS_EXCEPTION = HTTPException(
-    status_code=http_status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
+
+def _credentials_exception() -> HTTPException:
+    return HTTPException(
+        status_code=http_status.HTTP_401_UNAUTHORIZED,
+        detail=error_detail(
+            ErrorCode.UNAUTHORIZED, "Could not validate credentials"
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 class AuthService:
@@ -41,7 +45,11 @@ class AuthService:
         if existing is not None:
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered",
+                detail=error_detail(
+                    ErrorCode.EMAIL_ALREADY_REGISTERED,
+                    "Email already registered",
+                    resource="user",
+                ),
             )
         hashed = hash_password(password)
         return await self._repo.create(email=email, hashed_password=hashed)
@@ -57,13 +65,17 @@ class AuthService:
         if user is None or not verify_password(password, user.hashed_password):
             raise HTTPException(
                 status_code=http_status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password",
+                detail=error_detail(
+                    ErrorCode.UNAUTHORIZED, "Incorrect email or password"
+                ),
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if not user.is_active:
             raise HTTPException(
                 status_code=http_status.HTTP_403_FORBIDDEN,
-                detail="User account is inactive",
+                detail=error_detail(
+                    ErrorCode.FORBIDDEN, "User account is inactive"
+                ),
             )
         return create_access_token(subject=user.id)
 
@@ -76,14 +88,16 @@ class AuthService:
         """
         user_id = decode_access_token(token)
         if user_id is None:
-            raise _CREDENTIALS_EXCEPTION
+            raise _credentials_exception()
 
         user = await self._repo.get_by_id(user_id)
         if user is None:
-            raise _CREDENTIALS_EXCEPTION
+            raise _credentials_exception()
         if not user.is_active:
             raise HTTPException(
                 status_code=http_status.HTTP_403_FORBIDDEN,
-                detail="User account is inactive",
+                detail=error_detail(
+                    ErrorCode.FORBIDDEN, "User account is inactive"
+                ),
             )
         return user

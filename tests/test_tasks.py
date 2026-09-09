@@ -159,10 +159,15 @@ class TestFilteringAndSorting:
             assert resp.status_code == 201
             created.append(resp.json())
 
-        # Mark Beta as completed, Gamma as in_progress
+        # Mark Beta as completed (pending → in_progress → completed) and
+        # Gamma as in_progress, honoring the status state machine.
         client.put(
             f"/tasks/{created[1]['id']}",
-            json={"status": "completed", "version": 1},
+            json={"status": "in_progress", "version": 1},
+        )
+        client.put(
+            f"/tasks/{created[1]['id']}",
+            json={"status": "completed", "version": 2},
         )
         client.put(
             f"/tasks/{created[2]['id']}",

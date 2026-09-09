@@ -25,7 +25,18 @@ from app.repositories.task_repository import (
     VERSION_CONFLICT,
     TaskRepository,
 )
+from app.schemas.errors import ErrorCode, error_detail
 from app.schemas.task import PaginatedResponse, TaskOut
+
+# ---------------------------------------------------------------------------
+# Status transition state machine
+# ---------------------------------------------------------------------------
+VALID_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"in_progress", "cancelled"},
+    "in_progress": {"completed", "cancelled"},
+    "completed": set(),   # terminal
+    "cancelled": set(),   # terminal
+}
 
 
 class TaskService:
@@ -47,12 +58,22 @@ class TaskService:
         if owner_id is None:
             raise HTTPException(
                 status_code=http_status.HTTP_404_NOT_FOUND,
-                detail=f"Task with id {task_id} not found",
+                detail=error_detail(
+                    ErrorCode.TASK_NOT_FOUND,
+                    f"Task with id {task_id} not found",
+                    resource="task",
+                    resource_id=task_id,
+                ),
             )
         if owner_id != user_id:
             raise HTTPException(
                 status_code=http_status.HTTP_403_FORBIDDEN,
-                detail="You do not have permission to access this task",
+                detail=error_detail(
+                    ErrorCode.FORBIDDEN,
+                    "You do not have permission to access this task",
+                    resource="task",
+                    resource_id=task_id,
+                ),
             )
 
     # ------------------------------------------------------------------
@@ -89,7 +110,7 @@ class TaskService:
         except ValueError as exc:
             raise HTTPException(
                 status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
+                detail=error_detail(ErrorCode.VALIDATION_ERROR, str(exc)),
             ) from exc
 
     async def list_tasks_paginated(
@@ -123,7 +144,7 @@ class TaskService:
         except ValueError as exc:
             raise HTTPException(
                 status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
+                detail=error_detail(ErrorCode.VALIDATION_ERROR, str(exc)),
             ) from exc
 
         items = [TaskOut.model_validate(row) for row in rows]
@@ -142,6 +163,25 @@ class TaskService:
         """Create and return a new task owned by user_id."""
         return await self._repo.create(data, user_id=user_id)
 
+    def _validate_transition(self, current: str, target: str) -> None:
+        """
+        Raise 422 INVALID_TRANSITION if `current → target` is not allowed.
+
+        A no-op transition (current == target) is always permitted.
+        """
+        if target == current:
+            return
+        allowed = VALID_TRANSITIONS.get(current, set())
+        if target not in allowed:
+            raise HTTPException(
+                status_code=http_status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=error_detail(
+                    ErrorCode.INVALID_TRANSITION,
+                    f"Cannot transition task from '{current}' to '{target}'",
+                    resource="task",
+                ),
+            )
+
     async def update_task(
         self,
         task_id: int,
@@ -153,8 +193,25 @@ class TaskService:
         """
         Apply an optimistic-locking update to one of user_id's tasks.
 
-        Raises 404 if the task doesn't exist for this user, 409 on version conflict.
+        If the payload changes status, the transition is validated against
+        VALID_TRANSITIONS before any write occurs.
+
+        Raises:
+          - 404 if the task doesn't exist for this user
+          - 403 if the task belongs to another user
+          - 422 INVALID_TRANSITION on a disallowed status change
+          - 409 on version conflict
         """
+        # Validate a status change against the state machine first.
+        if "status" in data:
+            current = await self._repo.get_by_id(task_id, user_id=user_id)
+            if current is None:
+                # 404 or 403 depending on ownership
+                await self._raise_for_access(task_id, user_id=user_id)
+            target = data["status"]
+            target = target.value if hasattr(target, "value") else target
+            self._validate_transition(current["status"], target)  # type: ignore[index]
+
         result = await self._repo.update_raw(
             task_id, data, version, user_id=user_id
         )
@@ -166,7 +223,12 @@ class TaskService:
         if result == VERSION_CONFLICT:
             raise HTTPException(
                 status_code=http_status.HTTP_409_CONFLICT,
-                detail="version mismatch, re-fetch and retry",
+                detail=error_detail(
+                    ErrorCode.VERSION_CONFLICT,
+                    "version mismatch, re-fetch and retry",
+                    resource="task",
+                    resource_id=task_id,
+                ),
             )
         return result  # type: ignore[return-value]  # dict at this point
 

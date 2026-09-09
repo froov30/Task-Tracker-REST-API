@@ -148,24 +148,28 @@ class TestPaginationWithFilters:
     """Pagination respects active filters — total counts filtered rows only."""
 
     def test_total_reflects_filtered_subset(self, client):
-        # Create 5 pending + 3 completed tasks
+        # Create 8 tasks; move first 3 to in_progress (valid pending→in_progress)
         ids = [client.post("/tasks", json={"title": f"T{i}"}).json()["id"] for i in range(8)]
         for task_id in ids[:3]:
-            # mark first 3 as completed (version=1 for all fresh tasks)
-            client.put(f"/tasks/{task_id}", json={"status": "completed", "version": 1})
+            client.put(f"/tasks/{task_id}", json={"status": "in_progress", "version": 1})
 
-        resp = client.get("/tasks", params={"status": "completed", "page": 1, "page_size": 20})
+        resp = client.get(
+            "/tasks", params={"status": "in_progress", "page": 1, "page_size": 20}
+        )
         body = resp.json()
         assert body["total"] == 3
-        assert all(t["status"] == "completed" for t in body["items"])
+        assert all(t["status"] == "in_progress" for t in body["items"])
 
     def test_filtered_pagination_slices_correctly(self, client):
         # 10 pending tasks
         _create_tasks(client, 10)
-        # Mark 2 as completed
+        # Move 2 to in_progress (valid transition from pending)
         list_resp = client.get("/tasks", params={"page": 1, "page_size": 20}).json()
         for task in list_resp["items"][:2]:
-            client.put(f"/tasks/{task['id']}", json={"status": "completed", "version": task["version"]})
+            client.put(
+                f"/tasks/{task['id']}",
+                json={"status": "in_progress", "version": task["version"]},
+            )
 
         # Page 1 of pending tasks, page_size=3
         resp = client.get(
@@ -173,7 +177,7 @@ class TestPaginationWithFilters:
             params={"status": "pending", "page": 1, "page_size": 3},
         )
         body = resp.json()
-        assert body["total"] == 8           # 10 - 2 completed
+        assert body["total"] == 8           # 10 - 2 moved to in_progress
         assert len(body["items"]) == 3
         assert all(t["status"] == "pending" for t in body["items"])
 
