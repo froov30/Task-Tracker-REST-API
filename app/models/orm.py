@@ -7,7 +7,14 @@ Alembic's autogenerate reads Base.metadata to produce migrations.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -67,6 +74,9 @@ class Task(Base):
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     owner: Mapped["User"] = relationship("User", back_populates="tasks", lazy="noload")
 
@@ -82,4 +92,38 @@ class Task(Base):
             "updated_at": self.updated_at,
             "version": self.version,
             "user_id": self.user_id,
+            "deleted_at": self.deleted_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# TaskHistory — audit trail of every mutating operation on a task
+# ---------------------------------------------------------------------------
+
+class TaskHistory(Base):
+    __tablename__ = "task_history"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action: Mapped[str] = mapped_column(String(20), nullable=False)  # created|updated|deleted|restored
+    changed_fields: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON string
+    snapshot: Mapped[str | None] = mapped_column(Text, nullable=True)        # JSON string
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "task_id": self.task_id,
+            "user_id": self.user_id,
+            "action": self.action,
+            "changed_fields": self.changed_fields,
+            "snapshot": self.snapshot,
+            "created_at": self.created_at,
         }

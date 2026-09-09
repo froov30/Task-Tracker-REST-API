@@ -17,6 +17,7 @@ from fastapi import status as http_status
 
 from app.dependencies import get_current_user, get_task_service
 from app.models.orm import User
+from app.schemas.history import HistoryOut
 from app.schemas.task import (
     PaginatedResponse,
     SortBy,
@@ -52,6 +53,9 @@ async def list_tasks(
     page_size: int = Query(
         default=20, ge=1, le=100, description="Items per page (max 100)"
     ),
+    include_deleted: bool = Query(
+        default=False, description="Include soft-deleted tasks"
+    ),
     svc: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
 ) -> PaginatedResponse[TaskOut]:
@@ -64,6 +68,7 @@ async def list_tasks(
         sort_order=sort_order,
         page=page,
         page_size=page_size,
+        include_deleted=include_deleted,
     )
 
 
@@ -75,6 +80,16 @@ async def get_task(
 ) -> TaskOut:
     row = await svc.get_task(task_id, user_id=current_user.id)
     return TaskOut.model_validate(row)
+
+
+@router.get("/{task_id}/history", response_model=list[HistoryOut])
+async def get_task_history(
+    task_id: int,
+    svc: TaskService = Depends(get_task_service),
+    current_user: User = Depends(get_current_user),
+) -> list[HistoryOut]:
+    rows = await svc.get_history(task_id, user_id=current_user.id)
+    return [HistoryOut.model_validate(row) for row in rows]
 
 
 @router.put("/{task_id}", response_model=TaskOut)
@@ -93,11 +108,26 @@ async def update_task(
     return TaskOut.model_validate(row)
 
 
-@router.delete("/{task_id}", status_code=http_status.HTTP_204_NO_CONTENT)
-async def delete_task(
+@router.post("/{task_id}/restore", response_model=TaskOut)
+async def restore_task(
     task_id: int,
     svc: TaskService = Depends(get_task_service),
     current_user: User = Depends(get_current_user),
+) -> TaskOut:
+    row = await svc.restore_task(task_id, user_id=current_user.id)
+    return TaskOut.model_validate(row)
+
+
+@router.delete("/{task_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+async def delete_task(
+    task_id: int,
+    version: int | None = Query(
+        default=None,
+        ge=1,
+        description="If provided, delete is version-guarded (OCC); 409 on stale version",
+    ),
+    svc: TaskService = Depends(get_task_service),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    await svc.delete_task(task_id, user_id=current_user.id)
+    await svc.delete_task(task_id, user_id=current_user.id, version=version)
     return Response(status_code=http_status.HTTP_204_NO_CONTENT)

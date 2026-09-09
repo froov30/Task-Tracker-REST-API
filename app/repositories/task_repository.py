@@ -24,6 +24,7 @@ from app.models.orm import Task
 # ---------------------------------------------------------------------------
 NOT_FOUND = "NOT_FOUND"
 VERSION_CONFLICT = "VERSION_CONFLICT"
+ALREADY_ACTIVE = "ALREADY_ACTIVE"   # restore attempted on a non-deleted task
 
 # ---------------------------------------------------------------------------
 # Safe allowlists for dynamic ORDER BY (SQL injection guard)
@@ -81,17 +82,25 @@ class TaskRepository:
     # Read
     # ------------------------------------------------------------------
 
-    async def get_by_id(self, task_id: int, *, user_id: int) -> dict | None:
-        """Return the task as a dict if it belongs to user_id, else None."""
-        result = await self._db.execute(
-            select(Task).where(Task.id == task_id, Task.user_id == user_id)
-        )
+    async def get_by_id(
+        self, task_id: int, *, user_id: int, include_deleted: bool = False
+    ) -> dict | None:
+        """
+        Return the task as a dict if it belongs to user_id, else None.
+
+        By default soft-deleted tasks are excluded; pass include_deleted=True
+        to also return a soft-deleted row (used by the restore flow).
+        """
+        stmt = select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        if not include_deleted:
+            stmt = stmt.where(Task.deleted_at.is_(None))
+        result = await self._db.execute(stmt)
         task = result.scalar_one_or_none()
         return task.to_dict() if task is not None else None
 
     async def get_owner_id(self, task_id: int) -> int | None:
         """
-        Return the user_id that owns task_id, regardless of scope.
+        Return the user_id that owns task_id, regardless of scope or soft-delete.
 
         Used by the service layer to distinguish 404 (no such task anywhere)
         from 403 (task exists but belongs to another user).
@@ -109,9 +118,12 @@ class TaskRepository:
         status: str | None,
         due_before: date | None,
         due_after: date | None,
+        include_deleted: bool = False,
     ):
-        """Apply the ownership scope + shared WHERE clauses."""
+        """Apply the ownership scope + soft-delete filter + shared WHERE clauses."""
         stmt = stmt.where(Task.user_id == user_id)
+        if not include_deleted:
+            stmt = stmt.where(Task.deleted_at.is_(None))
         if status is not None:
             stmt = stmt.where(Task.status == _to_str(status))
         if due_before is not None:
@@ -129,6 +141,7 @@ class TaskRepository:
         due_after: date | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
+        include_deleted: bool = False,
     ) -> list[dict]:
         """Return all of user_id's tasks matching filters, in requested order."""
         column_name = SORT_COLUMNS.get(sort_by)
@@ -144,6 +157,7 @@ class TaskRepository:
             status=status,
             due_before=due_before,
             due_after=due_after,
+            include_deleted=include_deleted,
         )
 
         col = getattr(Task, column_name)
@@ -159,6 +173,7 @@ class TaskRepository:
         status: str | None = None,
         due_before: date | None = None,
         due_after: date | None = None,
+        include_deleted: bool = False,
     ) -> int:
         """Count user_id's tasks matching the given filters."""
         stmt = select(func.count()).select_from(Task)
@@ -168,6 +183,7 @@ class TaskRepository:
             status=status,
             due_before=due_before,
             due_after=due_after,
+            include_deleted=include_deleted,
         )
         result = await self._db.execute(stmt)
         return result.scalar_one()
@@ -183,6 +199,7 @@ class TaskRepository:
         sort_order: str = "desc",
         page: int = 1,
         page_size: int = 20,
+        include_deleted: bool = False,
     ) -> list[dict]:
         """Return one page of user_id's tasks matching the given filters."""
         column_name = SORT_COLUMNS.get(sort_by)
@@ -198,6 +215,7 @@ class TaskRepository:
             status=status,
             due_before=due_before,
             due_after=due_after,
+            include_deleted=include_deleted,
         )
 
         col = getattr(Task, column_name)
@@ -262,6 +280,7 @@ class TaskRepository:
             .where(
                 Task.id == task_id,
                 Task.user_id == user_id,
+                Task.deleted_at.is_(None),
                 Task.version == version,
             )
             .values(**values)
@@ -273,26 +292,98 @@ class TaskRepository:
         if updated is not None:
             return updated.to_dict()
 
-        # rowcount == 0: distinguish 404 from 409 (within this user's scope)
+        # rowcount == 0: distinguish 404 from 409 (within this user's active scope)
         exists_result = await self._db.execute(
             select(func.count()).where(
-                Task.id == task_id, Task.user_id == user_id
+                Task.id == task_id,
+                Task.user_id == user_id,
+                Task.deleted_at.is_(None),
             )
         )
         exists = exists_result.scalar_one() > 0
         return VERSION_CONFLICT if exists else NOT_FOUND
 
-    async def delete(self, task_id: int, *, user_id: int) -> bool:
+    async def delete(
+        self, task_id: int, *, user_id: int, version: int | None = None
+    ) -> dict | str:
         """
-        Delete user_id's task with task_id.
+        Soft-delete user_id's task by setting deleted_at = now().
 
-        Returns True if a row was deleted, False if it didn't exist for this user.
+        If *version* is provided, the delete is version-guarded (OCC):
+          - matches only when the row's version equals *version*
+          - 0 rows affected → distinguish NOT_FOUND vs VERSION_CONFLICT
+
+        Returns:
+          - the soft-deleted task dict on success
+          - NOT_FOUND if no active row with task_id belongs to user_id
+          - VERSION_CONFLICT if a version was given and it didn't match
         """
-        result = await self._db.execute(
-            select(Task).where(Task.id == task_id, Task.user_id == user_id)
+        now = _utcnow()
+
+        stmt = (
+            update(Task)
+            .where(
+                Task.id == task_id,
+                Task.user_id == user_id,
+                Task.deleted_at.is_(None),
+            )
         )
-        task = result.scalar_one_or_none()
-        if task is None:
-            return False
-        await self._db.delete(task)
-        return True
+        if version is not None:
+            stmt = stmt.where(Task.version == version)
+
+        stmt = stmt.values(deleted_at=now).returning(Task)
+        result = await self._db.execute(stmt)
+        deleted = result.scalar_one_or_none()
+
+        if deleted is not None:
+            return deleted.to_dict()
+
+        # Nothing updated — figure out why (within active scope).
+        exists_result = await self._db.execute(
+            select(func.count()).where(
+                Task.id == task_id,
+                Task.user_id == user_id,
+                Task.deleted_at.is_(None),
+            )
+        )
+        exists = exists_result.scalar_one() > 0
+        # If the active row exists but wasn't matched, it was a version mismatch.
+        if exists and version is not None:
+            return VERSION_CONFLICT
+        return NOT_FOUND
+
+    async def restore(self, task_id: int, *, user_id: int) -> dict | str:
+        """
+        Restore a soft-deleted task by clearing deleted_at.
+
+        Returns:
+          - the restored task dict on success
+          - NOT_FOUND if no soft-deleted row with task_id belongs to user_id
+          - ALREADY_ACTIVE if the row exists but isn't soft-deleted
+        """
+        stmt = (
+            update(Task)
+            .where(
+                Task.id == task_id,
+                Task.user_id == user_id,
+                Task.deleted_at.is_not(None),
+            )
+            .values(deleted_at=None)
+            .returning(Task)
+        )
+        result = await self._db.execute(stmt)
+        restored = result.scalar_one_or_none()
+
+        if restored is not None:
+            return restored.to_dict()
+
+        # Not soft-deleted — is it active, or does it not exist at all?
+        active_result = await self._db.execute(
+            select(func.count()).where(
+                Task.id == task_id,
+                Task.user_id == user_id,
+                Task.deleted_at.is_(None),
+            )
+        )
+        is_active = active_result.scalar_one() > 0
+        return ALREADY_ACTIVE if is_active else NOT_FOUND

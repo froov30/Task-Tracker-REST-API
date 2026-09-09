@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.orm import User
+from app.repositories.history_repository import HistoryRepository
 from app.repositories.task_repository import TaskRepository
 from app.repositories.user_repository import UserRepository
 from app.services.auth_service import AuthService
@@ -21,8 +22,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 
 def get_task_service(db: AsyncSession = Depends(get_db)) -> TaskService:  # noqa: B008
-    """Wire db → TaskRepository → TaskService for injection into routers."""
-    return TaskService(TaskRepository(db))
+    """Wire db → TaskRepository (+ HistoryRepository) → TaskService."""
+    return TaskService(TaskRepository(db), HistoryRepository(db))
 
 
 def get_auth_service(db: AsyncSession = Depends(get_db)) -> AuthService:  # noqa: B008
