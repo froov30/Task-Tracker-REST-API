@@ -71,6 +71,9 @@ class Task(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    priority: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="medium"
+    )
     user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -91,6 +94,7 @@ class Task(Base):
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "version": self.version,
+            "priority": self.priority,
             "user_id": self.user_id,
             "deleted_at": self.deleted_at,
         }

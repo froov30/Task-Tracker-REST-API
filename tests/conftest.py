@@ -10,25 +10,33 @@ isolated between tests.
 We override the `get_db` FastAPI dependency so every request made through
 TestClient uses the same test session.
 
-Authentication
+API versioning
 --------------
-Phase 4 made all task endpoints require a Bearer token. To keep existing
-task tests working unchanged, the default `client` fixture is pre-authenticated
-as a test user (its Authorization header is set automatically).
+Phase 7 moved the API under /api/v1. To keep existing test bodies unchanged,
+the test clients transparently prepend /api/v1 to feature paths (/tasks,
+/auth, /users). Infrastructure paths (/health, /ready) and already-versioned
+paths are passed through untouched.
+
+Rate limiting
+-------------
+Disabled for the whole suite via RATE_LIMIT_ENABLED=false (set before the app
+is imported). Rate-limit behavior is tested explicitly in test_rate_limiting.py
+with its own app instance.
 
 Fixtures provided:
   - db_session         : the isolated AsyncSession
-  - anon_client        : TestClient with NO auth header (for auth/negative tests)
-  - client             : TestClient pre-authenticated as user A
-  - second_user_token  : a Bearer token for a distinct user B (ownership tests)
+  - anon_client        : versioned TestClient with NO auth header
+  - client             : versioned TestClient pre-authenticated as user A
+  - second_user_token  : a Bearer token for a distinct user B
 """
 
 import os
 
 # ---------------------------------------------------------------------------
-# Set the test DATABASE_URL *before* any app module is imported.
+# Configure the environment *before* any app module is imported.
 # ---------------------------------------------------------------------------
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test_default.db")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest
 import pytest_asyncio
@@ -39,6 +47,21 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.database import Base, get_db
+
+API_V1_PREFIX = "/api/v1"
+# Feature path roots that live under the version prefix.
+_VERSIONED_ROOTS = ("/tasks", "/auth", "/users")
+
+
+def _version_path(url: str) -> str:
+    """Prepend /api/v1 to feature paths; leave infra/versioned paths alone."""
+    if url.startswith(API_V1_PREFIX):
+        return url
+    for root in _VERSIONED_ROOTS:
+        if url == root or url.startswith((root + "/", root + "?")):
+            return API_V1_PREFIX + url
+    return url
+
 
 # ---------------------------------------------------------------------------
 # Per-test async engine + session (file-based SQLite for isolation)
@@ -72,12 +95,11 @@ async def db_session(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Base (unauthenticated) client — overrides get_db with the test session
+# Version-aware TestClient
 # ---------------------------------------------------------------------------
 
-@pytest.fixture()
-def anon_client(db_session):
-    """A TestClient with the DB override but NO Authorization header."""
+def _make_versioned_client(db_session):
+    """Build a TestClient that auto-prefixes feature paths with /api/v1."""
     from fastapi.testclient import TestClient
 
     from app.main import app
@@ -86,7 +108,19 @@ def anon_client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
+
+    class _VersionedClient(TestClient):
+        def request(self, method, url, *args, **kwargs):
+            return super().request(method, _version_path(url), *args, **kwargs)
+
+    return app, _VersionedClient(app)
+
+
+@pytest.fixture()
+def anon_client(db_session):
+    """A version-aware TestClient with the DB override but NO auth header."""
+    app, c = _make_versioned_client(db_session)
+    with c:
         yield c
     app.dependency_overrides.clear()
 
@@ -108,12 +142,7 @@ def _register_and_login(client, email: str, password: str = "password123") -> st
 
 @pytest.fixture()
 def client(anon_client):
-    """
-    A TestClient pre-authenticated as user A (userA@example.com).
-
-    Its Authorization header is set on the underlying httpx client so every
-    request from existing task tests carries the Bearer token automatically.
-    """
+    """A version-aware TestClient pre-authenticated as user A."""
     token = _register_and_login(anon_client, "userA@example.com")
     anon_client.headers.update({"Authorization": f"Bearer {token}"})
     return anon_client

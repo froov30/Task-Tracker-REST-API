@@ -15,7 +15,14 @@ class TaskStatus(str, Enum):
     cancelled = "cancelled"
 
 
-SortBy = Literal["created_at", "due_date", "title"]
+class TaskPriority(str, Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+SortBy = Literal["created_at", "due_date", "title", "priority"]
 SortOrder = Literal["asc", "desc"]
 
 
@@ -23,6 +30,7 @@ class TaskCreate(BaseModel):
     title: TitleStr
     description: str | None = None
     due_date: date | None = None
+    priority: TaskPriority = TaskPriority.medium
 
 
 class TaskUpdate(BaseModel):
@@ -30,6 +38,7 @@ class TaskUpdate(BaseModel):
     description: str | None = None
     status: TaskStatus | None = None
     due_date: date | None = None
+    priority: TaskPriority | None = None
     version: int = Field(ge=1)
 
 
@@ -42,6 +51,7 @@ class TaskOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     version: int
+    priority: TaskPriority
     user_id: int
 
 

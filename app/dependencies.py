@@ -18,7 +18,7 @@ from app.services.auth_service import AuthService
 from app.services.task_service import TaskService
 
 # tokenUrl is the login endpoint; used by Swagger's "Authorize" button
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
 
 
 def get_task_service(db: AsyncSession = Depends(get_db)) -> TaskService:  # noqa: B008

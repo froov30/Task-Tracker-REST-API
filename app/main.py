@@ -1,11 +1,15 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.error_handlers import register_exception_handlers
+from app.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
+from app.routers.legacy_redirects import router as legacy_router
 from app.routers.tasks import router as tasks_router
 from app.routers.users import router as users_router
 
@@ -26,11 +30,29 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(title=settings.APP_TITLE, lifespan=lifespan)
+API_V1_PREFIX = "/api/v1"
+
+app = FastAPI(
+    title=settings.APP_TITLE,
+    lifespan=lifespan,
+    # Advertise the versioned base path to Swagger clients
+    servers=[{"url": "/", "description": "Default"}],
+)
 
 register_exception_handlers(app)
 
+# Rate limiting: attach the limiter, its 429 handler, and the middleware.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# Infrastructure endpoints — unversioned (used by health probes)
 app.include_router(health_router, tags=["health"])
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(users_router, prefix="/users", tags=["users"])
-app.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
+
+# Versioned API surface
+app.include_router(auth_router, prefix=f"{API_V1_PREFIX}/auth", tags=["auth"])
+app.include_router(users_router, prefix=f"{API_V1_PREFIX}/users", tags=["users"])
+app.include_router(tasks_router, prefix=f"{API_V1_PREFIX}/tasks", tags=["tasks"])
+
+# Legacy → /api/v1 redirects (transitional backward-compat)
+app.include_router(legacy_router, include_in_schema=False)

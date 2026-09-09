@@ -6,13 +6,14 @@ Health / readiness router — infrastructure endpoints (no auth, no version pref
   GET /ready  → same shape; used by Azure App Service health probes.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi import status as http_status
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.rate_limit import limiter
 
 router = APIRouter()
 
@@ -40,10 +41,16 @@ async def _health_payload(db: AsyncSession) -> JSONResponse:
 
 
 @router.get("/health")
-async def health(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+@limiter.exempt
+async def health(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> JSONResponse:
     return await _health_payload(db)
 
 
 @router.get("/ready")
-async def ready(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+@limiter.exempt
+async def ready(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> JSONResponse:
     return await _health_payload(db)

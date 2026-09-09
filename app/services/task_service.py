@@ -133,6 +133,7 @@ class TaskService:
         status: str | None = None,
         due_before: date | None = None,
         due_after: date | None = None,
+        priority: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         page: int = 1,
@@ -145,6 +146,7 @@ class TaskService:
             "status": status,
             "due_before": due_before,
             "due_after": due_after,
+            "priority": priority,
             "include_deleted": include_deleted,
         }
         try:

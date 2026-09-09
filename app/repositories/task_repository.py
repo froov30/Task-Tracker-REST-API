@@ -33,6 +33,7 @@ SORT_COLUMNS: dict[str, str] = {
     "created_at": "created_at",
     "due_date": "due_date",
     "title": "title",
+    "priority": "priority",
 }
 SORT_ORDERS: dict[str, str] = {
     "asc": "asc",
@@ -40,7 +41,9 @@ SORT_ORDERS: dict[str, str] = {
 }
 
 # Columns that may appear in an UPDATE payload
-_UPDATABLE_COLUMNS = frozenset({"title", "description", "status", "due_date"})
+_UPDATABLE_COLUMNS = frozenset(
+    {"title", "description", "status", "due_date", "priority"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +121,7 @@ class TaskRepository:
         status: str | None,
         due_before: date | None,
         due_after: date | None,
+        priority: str | None = None,
         include_deleted: bool = False,
     ):
         """Apply the ownership scope + soft-delete filter + shared WHERE clauses."""
@@ -126,6 +130,8 @@ class TaskRepository:
             stmt = stmt.where(Task.deleted_at.is_(None))
         if status is not None:
             stmt = stmt.where(Task.status == _to_str(status))
+        if priority is not None:
+            stmt = stmt.where(Task.priority == _to_str(priority))
         if due_before is not None:
             stmt = stmt.where(Task.due_date <= due_before.isoformat())
         if due_after is not None:
@@ -173,6 +179,7 @@ class TaskRepository:
         status: str | None = None,
         due_before: date | None = None,
         due_after: date | None = None,
+        priority: str | None = None,
         include_deleted: bool = False,
     ) -> int:
         """Count user_id's tasks matching the given filters."""
@@ -183,6 +190,7 @@ class TaskRepository:
             status=status,
             due_before=due_before,
             due_after=due_after,
+            priority=priority,
             include_deleted=include_deleted,
         )
         result = await self._db.execute(stmt)
@@ -195,6 +203,7 @@ class TaskRepository:
         status: str | None = None,
         due_before: date | None = None,
         due_after: date | None = None,
+        priority: str | None = None,
         sort_by: str = "created_at",
         sort_order: str = "desc",
         page: int = 1,
@@ -215,6 +224,7 @@ class TaskRepository:
             status=status,
             due_before=due_before,
             due_after=due_after,
+            priority=priority,
             include_deleted=include_deleted,
         )
 
@@ -239,6 +249,7 @@ class TaskRepository:
             description=data.get("description"),
             status="pending",
             due_date=_to_str(data.get("due_date")),
+            priority=_to_str(data.get("priority")) or "medium",
             created_at=now,
             updated_at=now,
             version=1,

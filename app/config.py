@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # Rate limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_UNAUTHENTICATED: str = "100/minute"  # per IP
+    RATE_LIMIT_AUTHENTICATED: str = "300/minute"    # per user id
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

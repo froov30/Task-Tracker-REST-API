@@ -24,6 +24,7 @@ from app.schemas.task import (
     SortOrder,
     TaskCreate,
     TaskOut,
+    TaskPriority,
     TaskStatus,
     TaskUpdate,
 )
@@ -45,6 +46,7 @@ async def create_task(
 @router.get("", response_model=PaginatedResponse[TaskOut])
 async def list_tasks(
     status: TaskStatus | None = Query(default=None),
+    priority: TaskPriority | None = Query(default=None),
     due_before: date | None = Query(default=None),
     due_after: date | None = Query(default=None),
     sort_by: SortBy = Query(default="created_at"),
@@ -62,6 +64,7 @@ async def list_tasks(
     return await svc.list_tasks_paginated(
         user_id=current_user.id,
         status=status,
+        priority=priority,
         due_before=due_before,
         due_after=due_after,
         sort_by=sort_by,
