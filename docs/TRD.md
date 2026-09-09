@@ -1,5 +1,13 @@
 # TRD — Task Tracker REST API
 
+> **⚠️ v2 update:** The tech stack below reflects v1 (SQLite via stdlib `sqlite3`,
+> single-user, unversioned routes). **v2** replaces the DB with **PostgreSQL 16 +
+> SQLAlchemy 2.0 async + Alembic**, adds **JWT auth + per-user ownership**, **service &
+> repository layers**, a status **state machine**, **soft delete + audit history**,
+> **pagination**, **priority**, **API versioning under `/api/v1`**, **rate limiting**
+> (slowapi), and **structured JSON logging** (structlog). See the **README** and
+> **DECISIONS.md #20–#25** for the current stack and rationale.
+
 ## 1. Tech Stack
 
 | Layer | Choice | Notes |

@@ -1,5 +1,15 @@
 # Architecture Plan — Task Tracker REST API
 
+> **⚠️ v2 update:** This document describes the original v1 design (single-user, SQLite,
+> raw `sqlite3` in `models/task.py`). The project has since evolved to **v2**:
+> **PostgreSQL 16 + SQLAlchemy 2.0 async + Alembic**, with full **service → repository**
+> layering, **JWT auth + per-user ownership**, a status **state machine**, **soft delete +
+> audit history**, **pagination**, **priority**, **rate limiting**, and **structured
+> logging**. Data-access logic described here as living in `models/task.py` now lives in
+> `app/repositories/`; business rules live in `app/services/`. See the **README** diagram
+> and **DECISIONS.md #20–#25** for the current architecture. The strict-layering principle
+> below still holds — v2 deepened it.
+
 ## 1. Guiding Principle
 Strict layering: **routes never touch SQL, and the DB layer never sees HTTP concepts.**
 Each layer has exactly one job, so a change in one (e.g., swapping SQLite for Postgres

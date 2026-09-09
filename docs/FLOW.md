@@ -1,5 +1,12 @@
 # FLOW.md
 
+> **⚠️ v2 update:** The flow described below is the v1 path
+> (`router → models/task.py (sqlite3) → tasks.db`). In **v2** a request flows:
+> `rate limiter → request-id/logging middleware → JWT auth (get_current_user) →
+> router (/api/v1) → TaskService (business logic, OCC, state machine, audit dispatch) →
+> TaskRepository (SQLAlchemy async) → PostgreSQL`, with history writes via
+> HistoryRepository. See the **README** architecture diagram for the current flow.
+
 Documents how a request actually travels through the codebase — which file calls which
 function, in what order — and tracks which part of that path is currently being built or
 modified. Update this file every time execution flow changes (new endpoint, new layer,
