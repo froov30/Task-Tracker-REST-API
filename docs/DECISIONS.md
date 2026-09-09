@@ -23,7 +23,99 @@ numbered after whatever has already been logged by then (currently #18).
 
 ---
 
-## #19 — SQLite retained; documented ceiling at ~50 concurrent writers
+## #25 — Rate limiting via slowapi (per-user / per-IP)
+Date/Phase: v2 Phase 7
+Decision: Add application-wide rate limiting with `slowapi`: 300/min per authenticated
+user id, 100/min per IP for unauthenticated traffic. 429 responses use the same
+structured `ErrorResponse` envelope (`RATE_LIMIT_EXCEEDED`). Health/readiness probes
+are exempt. Limiting is toggleable via `RATE_LIMIT_ENABLED` (off in the functional test
+suite; tested in isolation).
+Reasoning: Protects the API from abuse and accidental hammering. Per-user keying gives
+authenticated clients a fair, higher ceiling; per-IP keying covers login/register.
+Alternatives considered: API gateway / reverse-proxy rate limiting (out of app scope
+for this project); no limiting (leaves the service exposed).
+Trade-off accepted: slowapi's in-memory store is per-process — a multi-worker or
+multi-instance deployment needs a shared store (Redis) for a global limit. Documented
+as a known limitation.
+
+## #24 — API versioning under /api/v1
+Date/Phase: v2 Phase 7
+Decision: Mount all feature routes under `/api/v1` (`/api/v1/auth`, `/api/v1/tasks`,
+`/api/v1/users`). Health/readiness stay unversioned (`/health`, `/ready`) as
+infrastructure endpoints. Legacy `GET /tasks` and `/users/me` return a 301 redirect to
+the versioned path.
+Reasoning: A version prefix lets future breaking changes ship as `/api/v2` without
+disrupting existing clients. Health endpoints are excluded because probes target a
+fixed, unversioned URL.
+Alternatives considered: Header-based versioning (harder to discover/test); no
+versioning (no forward path for breaking changes).
+Trade-off accepted: 301 only preserves method for GET, so non-GET legacy callers must
+migrate to `/api/v1` directly — a documented breaking change.
+
+## #23 — Task priority field
+Date/Phase: v2 Phase 7
+Decision: Add a `priority` column (`low|medium|high|critical`, default `medium`) with
+filter and sort support. Stored as TEXT for SQLite/Postgres portability.
+Reasoning: Meaningfully extends the data model and demonstrates enum handling, filtering,
+and whitelisted sorting end to end.
+Alternatives considered: A separate priorities table (overkill for a fixed enum); integer
+priority levels (less self-documenting in API responses).
+Trade-off accepted: Enum values are validated at the schema layer, not by a DB CHECK
+constraint — acceptable given the app is the sole writer.
+
+## #22 — Soft delete + audit history
+Date/Phase: v2 Phase 6
+Decision: Deletes are soft (`tasks.deleted_at` timestamp); a `task_history` table records
+every create/update/delete/restore with `changed_fields` + `snapshot` (JSON as TEXT).
+Added `POST /tasks/{id}/restore`, `GET /tasks/{id}/history`, and an `include_deleted`
+list filter. DELETE also gained an optional `version` query param for OCC-guarded deletes.
+Reasoning: Real backends rarely hard-delete user data; soft delete enables restore and an
+auditable trail. The OCC gap in DELETE (v1 had none) is closed.
+Alternatives considered: Hard delete + separate archive table (more moving parts); event
+sourcing (far beyond scope).
+Trade-off accepted: Every query must filter `deleted_at IS NULL`; history rows accumulate
+unboundedly (a retention/archival policy is a future concern).
+
+## #21 — Task status state machine + structured errors + health endpoints
+Date/Phase: v2 Phase 5
+Decision: Enforce valid status transitions in the service layer
+(pending→{in_progress,cancelled}, in_progress→{completed,cancelled}; completed/cancelled
+terminal). Standardize all error responses as `{"error": {code, message, resource,
+resource_id}}` via global exception handlers. Add `GET /health` and `GET /ready`
+(SELECT 1 → 200/503).
+Reasoning: A state machine prevents nonsensical transitions (e.g. completed→pending). A
+uniform error envelope makes the API programmatically consumable. Health endpoints support
+container/orchestrator probes.
+Alternatives considered: Free-form status changes (simpler, but allows invalid states);
+per-endpoint ad-hoc error shapes (inconsistent for clients).
+Trade-off accepted: `pending→completed` in one step is now rejected — a real behavioral
+change from v1 that clients must respect.
+
+## #20 — Multi-user auth (JWT) + task ownership; PostgreSQL + SQLAlchemy + Alembic; service/repository layering
+Date/Phase: v2 Phases 1–4 [SUPERSEDES #19]
+Decision: Evolve from a single-user SQLite app into a multi-user backend:
+ - **Database:** migrate to PostgreSQL 16 via SQLAlchemy 2.0 async (asyncpg) with Alembic
+   migrations. This supersedes #19's "retain SQLite" — the migration was a deliberate
+   architectural upgrade for concurrency (row-level MVCC) and production realism, not a
+   reaction to a specific new load number. SQLite remains the fast test/CI driver via
+   `aiosqlite`.
+ - **Architecture:** insert a service layer (business logic, OCC, state machine, audit
+   dispatch) and a repository layer (all SQLAlchemy queries) between routers and the ORM.
+   Routers do HTTP only.
+ - **Auth:** add a `users` table, bcrypt password hashing, JWT bearer tokens, and
+   `tasks.user_id` ownership so users see and mutate only their own tasks (403/404).
+Reasoning: Every subsequent v2 feature (auth tables, soft-delete columns, audit tables)
+needs a real migration system; PostgreSQL removes SQLite's single-writer ceiling
+documented in `docs/LOAD_TESTING.md`. Clean layering keeps the growing logic testable.
+Alternatives considered: Staying on SQLite with WAL mode (still single-writer, no real
+multi-connection story); session-based auth (needs server-side session store — JWT is
+stateless and simpler to scale); keeping raw SQL (harder to migrate and unit-test).
+Trade-off accepted: bcrypt is used directly instead of `passlib` (passlib 1.7.4 is
+incompatible with modern bcrypt 4.x). More infrastructure (engine, Alembic, migrations)
+than a single SQLite file. JWTs can't be revoked before expiry without a denylist
+(future work).
+
+## #19 — SQLite retained; documented ceiling at ~50 concurrent writers **[SUPERSEDED by #20]**
 Date/Phase: Phase 7 (Load Testing & Scalability Baseline)
 Decision: Retain SQLite as the database engine for this version. No migration to
 PostgreSQL. The load-test results are the honest finding that drives this decision —

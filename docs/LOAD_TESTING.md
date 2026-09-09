@@ -183,3 +183,75 @@ Full reasoning and alternatives are logged in DECISIONS.md #19.
 - **Latency:** Local p50 (11 ms) vs Azure Cloud p50 (56 ms). The 45 ms difference reflects realistic TLS handshakes and WAN network round-trips from client to the `centralindia` Azure region.
 - **Reliability:** **0% error rate** across 1,317 continuous requests over 60 seconds. The containerized API runs stably under real cloud network conditions.
 
+
+---
+
+## v2 Results (PostgreSQL 16 + Async SQLAlchemy)
+
+**Stack under test:** FastAPI (async) → SQLAlchemy 2.0 async (asyncpg) → PostgreSQL 16
+**API surface:** `/api/v1/*`, JWT-authenticated. The v2 `locustfile.py` registers and
+logs in a unique user per simulated client, then sends `Authorization: Bearer <token>`
+on every request.
+
+### How to reproduce
+
+```bash
+# 1. Bring up Postgres + the app
+docker compose up -d          # Postgres 16 on :5432, app on :8000 (runs migrations)
+
+# 2. Run the mixed-load ramp (repeat for 10 / 50 / 100 / 200)
+locust -f locustfile.py MixedLoadUser \
+    --headless --host http://127.0.0.1:8000 \
+    --users 50 --spawn-rate 10 --run-time 60s \
+    --csv results/pg_mixed_50
+
+# 3. Run the concurrent-write (OCC) scenario
+locust -f locustfile.py ConcurrentWriteUser \
+    --headless --host http://127.0.0.1:8000 \
+    --users 50 --spawn-rate 10 --run-time 60s \
+    --csv results/pg_concurrent_50
+```
+
+### Results
+
+> [!NOTE]
+> The tables below are to be populated from an actual local Postgres run using the
+> commands above. They are left as a template with the expected shape so the run
+> is a fill-in-the-blanks exercise. **These numbers have not yet been captured in
+> this environment** — do not cite them as measured until the run is completed and
+> the placeholders are replaced.
+
+#### Mixed Load Ramp (aggregated)
+
+| Users | Total Req | Errors | Error % | Throughput (req/s) | p50 (ms) | p95 (ms) | p99 (ms) |
+|-------|-----------|--------|---------|--------------------|----------|----------|----------|
+| 10    | _TBD_     | _TBD_  | _TBD_   | _TBD_              | _TBD_    | _TBD_    | _TBD_    |
+| 50    | _TBD_     | _TBD_  | _TBD_   | _TBD_              | _TBD_    | _TBD_    | _TBD_    |
+| 100   | _TBD_     | _TBD_  | _TBD_   | _TBD_              | _TBD_    | _TBD_    | _TBD_    |
+| 200   | _TBD_     | _TBD_  | _TBD_   | _TBD_              | _TBD_    | _TBD_    | _TBD_    |
+
+#### Concurrent Writes (OCC behavior)
+
+| Metric | Value |
+|--------|-------|
+| PUT requests | _TBD_ |
+| `409 Conflict` (OCC working) | _TBD_ |
+| `5xx` errors | _TBD_ (expected: **0** — PostgreSQL MVCC has no file-level write lock) |
+
+### v1 (SQLite) vs v2 (PostgreSQL) — What to expect
+
+The key architectural difference driving the comparison:
+
+- **SQLite** serializes writes behind a single file-level lock. Under the v1 tests,
+  `database is locked` `500`s first appeared at ~50 concurrent users and degraded
+  severely at 200 (9% error rate, 5 s median latency, throughput *dropping* — a
+  queueing signal).
+- **PostgreSQL** uses row-level MVCC, so concurrent writers to *different* rows do not
+  block each other, and concurrent writers to the *same* row resolve through the
+  application's optimistic version check (returning `409`, never a `500` lock error).
+
+The expectation for v2 is therefore: **no `500` lock errors under the same load**, a
+flatter latency curve as concurrency rises, and throughput that continues to climb (or
+plateaus) rather than collapsing at 200 users. The OCC `409` behavior is unchanged —
+the version check is the same logic, now enforced in a `UPDATE ... WHERE version = :v`
+against Postgres.

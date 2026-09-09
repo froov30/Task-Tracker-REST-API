@@ -6,6 +6,8 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import settings
 from app.error_handlers import register_exception_handlers
+from app.logging_config import configure_logging
+from app.middleware import RequestContextMiddleware
 from app.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers.auth import router as auth_router
 from app.routers.health import router as health_router
@@ -32,6 +34,8 @@ async def lifespan(app: FastAPI):
 
 API_V1_PREFIX = "/api/v1"
 
+configure_logging()
+
 app = FastAPI(
     title=settings.APP_TITLE,
     lifespan=lifespan,
@@ -40,6 +44,9 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
+
+# Request-context logging (request_id, latency, user_id) + X-Request-ID header.
+app.add_middleware(RequestContextMiddleware)
 
 # Rate limiting: attach the limiter, its 429 handler, and the middleware.
 app.state.limiter = limiter

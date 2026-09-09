@@ -19,6 +19,7 @@ from datetime import date
 from fastapi import HTTPException
 from fastapi import status as http_status
 
+from app.logging_config import get_logger
 from app.repositories.history_repository import HistoryRepository
 from app.repositories.task_repository import (
     ALREADY_ACTIVE,
@@ -28,6 +29,8 @@ from app.repositories.task_repository import (
 )
 from app.schemas.errors import ErrorCode, error_detail
 from app.schemas.task import PaginatedResponse, TaskOut
+
+_logger = get_logger("task_service")
 
 # ---------------------------------------------------------------------------
 # Status transition state machine
@@ -245,6 +248,11 @@ class TaskService:
         if result == NOT_FOUND:
             await self._raise_for_access(task_id, user_id=user_id)
         if result == VERSION_CONFLICT:
+            _logger.info(
+                "occ.conflict",
+                task_id=task_id,
+                expected_version=version,
+            )
             raise HTTPException(
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail=error_detail(

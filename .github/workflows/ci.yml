@@ -10,6 +10,31 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
+    # PostgreSQL service container the test suite runs against.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: taskuser
+          POSTGRES_PASSWORD: taskpass
+          POSTGRES_DB: taskdb_test
+        ports:
+          - 5432:5432
+        # Wait until Postgres is ready before starting the job steps.
+        options: >-
+          --health-cmd "pg_isready -U taskuser -d taskdb_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Async URL used by the app / test suite.
+      DATABASE_URL: postgresql+asyncpg://taskuser:taskpass@localhost:5432/taskdb_test
+      # Deterministic secret for JWT signing during tests.
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      # Keep global rate limiting off for the functional suite.
+      RATE_LIMIT_ENABLED: "false"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,6 +52,9 @@ jobs:
 
       - name: Lint with Ruff
         run: ruff check app/ tests/
+
+      - name: Run Alembic migrations
+        run: alembic upgrade head
 
       - name: Run test suite
         run: pytest tests/ -v
